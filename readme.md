@@ -15,6 +15,12 @@ Echo-TTS Kobold GUI is a lightweight desktop interface for:
 
 ---
 
+## Demos
+
+* https://youtu.be/8LtEEU3piCY
+* https://youtu.be/qfxwzQMM0-I
+* https://youtu.be/LqsMvHKWdFs
+  
 ## Requirements
 
 * **Python 3.11**
