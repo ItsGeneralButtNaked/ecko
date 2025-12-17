@@ -1,9 +1,15 @@
-# Echo-TTS Kobold GUI
+# ECKO
 
-Echo-TTS Kobold GUI is a lightweight desktop interface for:
+ECKO is a lightweight desktop interface for:
 
-* **KoboldCPP** text generation
 * **Echo-TTS** streaming speech synthesis
+* **KoboldCPP** text generation
+
+## Why did you make this?
+
+Ive been messing around with LLMs and TTS for a short while. Echo got released and there wasn't anything else similar available. All the other solutions I tried only connect to the wav output, which on my level of hardware means a grim wait for the audio to generate. Additionally, they come with so many other features that are not required for basic turn-based TTS interaction.
+
+So I just built my own! As you can see in the demo videos it is blazing fast without any performance tweaks even on archaic hardware.
 
 ## Features
 
@@ -107,6 +113,7 @@ This isn’t meant to be a deep or comprehensive tool — it’s just a quick an
 1. I’m not fully happy with the Auto Gain yet — it definitely needs some tweaks, but it’s useful to have.
 2. KV scale could use more exposed values (possibly an **Advanced** tab).
 3. General UI cleanup.
+4. Speech to text
 
 ---
 
