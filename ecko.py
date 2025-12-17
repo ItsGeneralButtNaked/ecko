@@ -19,8 +19,8 @@ from PySide6.QtGui import QPainter, QColor, QPen, QFont, QTextCursor
 # CONFIG
 # ======================
 
-KOBOLD_BASE = "http://localhost:5002"
-TTS_BASE = "http://localhost:9000"
+KOBOLD_BASE = "http://localhost:5001"
+TTS_BASE = "http://localhost:8000"
 
 SAMPLE_RATE = 44100
 CHANNELS = 1
