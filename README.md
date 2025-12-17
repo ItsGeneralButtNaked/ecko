@@ -19,15 +19,30 @@ So I just built my own! As you can see in the demo videos it is blazing fast wit
 * Real-time waveform visualization
 * Persistent settings
 
+## Ecko v0.2 Update
+## Speech-to-Text (STT) & Push-to-Talk
+
+Ecko now supports live speech transcription using faster-whisper. You can use your microphone to dictate messages directly into the chat. It's not fully implemented but its in and working.
+
+*Mic toggle: Click the 🎤 Mic button to enable the microphone.
+
+*Push-to-Talk (PTT): Hold the Left Alt key to start recording while the mic is enabled. Release the key to stop recording.
+
+*Automatic transcription: Once you release the PTT key, your speech is transcribed and automatically placed into the chat input box. From there, it is sent just like typed text.
+
+*Temporary behavior: The Mic button currently forces PTT mode; Open Mic will be added later.
+
+*STT is currently mapped to CPU
+
 ---
 
 ## Requirements
 
 * **Python 3.11**
-* A running **KoboldCPP** server
-  [https://github.com/LostRuins/koboldcpp](https://github.com/LostRuins/koboldcpp)
 * A running **Echo-TTS-API** server
   [https://github.com/KevinAHM/echo-tts-api](https://github.com/KevinAHM/echo-tts-api)
+* A running **KoboldCPP** server
+  [https://github.com/LostRuins/koboldcpp](https://github.com/LostRuins/koboldcpp)
 
 ---
 
@@ -35,14 +50,14 @@ So I just built my own! As you can see in the demo videos it is blazing fast wit
 
 This application requires **two local servers** to be running before launch:
 
-* **KoboldCPP** (LLM text generation)
 * **Echo-TTS-API** (streaming text-to-speech)
+* **KoboldCPP** (LLM text generation)
 
 The GUI connects to these services using the following default endpoints:
 
 ```python
-KOBOLD_BASE = "http://localhost:5001"
 TTS_BASE    = "http://localhost:8000"
+KOBOLD_BASE = "http://localhost:5001"
 ```
 
 You can change these in the script if your servers run on different hosts or ports.
@@ -54,8 +69,8 @@ You can change these in the script if your servers run on different hosts or por
 ### 1️⃣ Clone the repository
 
 ```bash
-git clone https://github.com/ItsGeneralButtNaked/echo-tts-gui-kobold.git
-cd echo-tts-gui-kobold
+git clone https://github.com/ItsGeneralButtNaked/ecko
+cd ecko
 ```
 
 ### 2️⃣ Create a virtual environment
@@ -63,8 +78,8 @@ cd echo-tts-gui-kobold
 #### Option A — Conda
 
 ```bash
-conda create -n echo-tts-gui python=3.11
-conda activate echo-tts-gui
+conda create -n ecko python=3.11
+conda activate ecko
 ```
 
 #### Option B — Standard Python venv
@@ -84,7 +99,7 @@ pip install -r requirements.txt
 ### 4️⃣ Run the application
 
 ```bash
-python echo-tts-gui-kobold.py
+python ecko.py
 ```
 
 ---
@@ -101,7 +116,6 @@ sudo apt install portaudio19-dev libxcb-cursor0
 
 ## Extra Waffle 🍩
 
-I also have an **Ollama-based version** that works, but it’s currently behind on a few features.
 This isn’t meant to be a deep or comprehensive tool — it’s just a quick and easy way to play around with the amazing **Echo-TTS**.
 
 [https://github.com/jordandare/echo-tts](https://github.com/jordandare/echo-tts)
@@ -113,7 +127,6 @@ This isn’t meant to be a deep or comprehensive tool — it’s just a quick an
 1. I’m not fully happy with the Auto Gain yet — it definitely needs some tweaks, but it’s useful to have.
 2. KV scale could use more exposed values (possibly an **Advanced** tab).
 3. General UI cleanup.
-4. Speech to text
 
 ---
 

@@ -8,7 +8,10 @@ numpy>=1.23
 # Networking
 requests>=2.31
 
+# STT / Whisper
+faster-whisper>=0.6
+torch>=2.1
+
 # Optional but recommended
 # Improves SSL / HTTP behavior on some systems
 certifi>=2023.7.22
-

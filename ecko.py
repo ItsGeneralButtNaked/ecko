@@ -12,15 +12,15 @@ from PySide6.QtWidgets import (
     QTextEdit, QPushButton, QComboBox, QLabel, QSlider,
     QSizePolicy, QFileDialog, QMessageBox, QLineEdit  # ADDED
 )
-from PySide6.QtCore import Qt, QTimer, QRectF, QPointF, QSettings
-from PySide6.QtGui import QPainter, QColor, QPen, QFont
+from PySide6.QtCore import Qt, QTimer, QRectF, QPointF, QSettings,QEvent
+from PySide6.QtGui import QPainter, QColor, QPen, QFont, QTextCursor
 
 # ======================
 # CONFIG
 # ======================
 
-KOBOLD_BASE = "http://localhost:5001"
-TTS_BASE = "http://localhost:8000"
+KOBOLD_BASE = "http://localhost:5002"
+TTS_BASE = "http://localhost:9000"
 
 SAMPLE_RATE = 44100
 CHANNELS = 1
@@ -29,6 +29,16 @@ WAVE_SAMPLES = 2048
 WAVE_TIMER_MS = 30
 MAX_HISTORY_MESSAGES = 20  # 10 turns
 
+# ======================
+# STT CONFIG
+# ======================
+
+STT_SAMPLE_RATE = 16000
+STT_CHANNELS = 1
+STT_BLOCKSIZE = 1024
+PTT_KEY = Qt.Key_Alt  # push-to-talk key
+
+LEFT_ALT_SCANCODE = 0x38  # Windows left alt
 
 # ======================
 # AUDIO PLAYER
@@ -85,6 +95,71 @@ class PCMPlayer:
     def close(self):
         self.stream.stop()
         self.stream.close()
+
+# ======================
+# STT ENGINE
+# ======================
+
+from faster_whisper import WhisperModel
+import queue
+
+class STTEngine:
+    def __init__(self, model="base", device="auto"):
+        self.model = WhisperModel(
+            model,
+            device=device,
+            compute_type="float16" if device != "cpu" else "int8"
+        )
+
+        self.audio_q = queue.Queue()
+        self.recording = False
+        self.stream = None
+
+    def start(self):
+        if self.stream:
+            return
+
+        self.recording = True
+        self.audio_q.queue.clear()
+
+        self.stream = sd.InputStream(
+            samplerate=STT_SAMPLE_RATE,
+            channels=STT_CHANNELS,
+            dtype="float32",
+            blocksize=STT_BLOCKSIZE,
+            callback=self._callback
+        )
+        self.stream.start()
+
+    def stop(self):
+        self.recording = False
+        if self.stream:
+            self.stream.stop()
+            self.stream.close()
+            self.stream = None
+
+    def _callback(self, indata, frames, time, status):
+        if self.recording:
+            self.audio_q.put(indata.copy())
+
+    def transcribe(self):
+        chunks = []
+        while not self.audio_q.empty():
+            chunks.append(self.audio_q.get())
+
+        if not chunks:
+            return ""
+
+        audio = np.concatenate(chunks, axis=0).flatten()
+        segments, _ = self.model.transcribe(
+            audio,
+            language="en",
+            vad_filter=True
+        )
+
+        return " ".join(seg.text.strip() for seg in segments)
+
+
 # ======================
 # STATUS LED
 # ======================
@@ -184,15 +259,7 @@ class SendTextEdit(QTextEdit):
         super().__init__(parent_app)
         self.parent_app = parent_app
 
-    def keyPressEvent(self, event):
-        if (
-            event.key() in (Qt.Key_Return, Qt.Key_Enter)
-            and event.modifiers() == Qt.NoModifier
-            and self.parent_app.enter_send_btn.isChecked()
-        ):
-            self.parent_app.on_send()
-            return
-        super().keyPressEvent(event)
+
 
 
 # ======================
@@ -202,10 +269,10 @@ class SendTextEdit(QTextEdit):
 class App(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Echo-TTS-Kobold GUI v0.1")
+        self.setWindowTitle("Ecko v0.2")
         self.resize(860, 700)
 
-        self.settings = QSettings("EchoTTS", "EchoTTS-GUI")
+        self.settings = QSettings("Ecko", "Ecko-GUI-v0.2")
 
         self.player = PCMPlayer()
         self.user_gain = 1.5
@@ -217,9 +284,19 @@ class App(QWidget):
 
         self.pipeline_sem = threading.Semaphore(1)
         self.chat_history = []
+        
+        self.stt = STTEngine(model="base", device="cpu")
+        
+        self.mic_enabled = False
+        self.ptt_enabled = False
+        self.ptt_active = False
 
         self.build_ui()
+        
+        QApplication.instance().installEventFilter(self)
+        
         self.initial_load()
+        
 
     def get_character_dir(self):
         path = os.path.join(os.getcwd(), "characters")
@@ -280,6 +357,67 @@ class App(QWidget):
             return val
         except ValueError:
             return None
+    def toggle_mic(self, enabled):
+        self.mic_enabled = enabled
+
+        # Force PTT to follow mic state
+        if self.ptt_btn.isChecked() != enabled:
+            self.ptt_btn.blockSignals(True)
+            self.ptt_btn.setChecked(enabled)
+            self.ptt_btn.blockSignals(False)
+
+        self.ptt_enabled = enabled
+
+        if not enabled:
+            self.ptt_active = False
+            self.stt.stop()
+            return
+
+    # Mic ON always requires PTT (temporary behavior)
+    # Actual recording starts only when Alt is held
+
+
+            
+    def toggle_ptt(self, enabled):
+        # PTT is temporarily forced by Mic toggle
+        self.ptt_enabled = self.mic_enabled
+
+
+        
+    def eventFilter(self, obj, event):
+        # ---------- ENTER TO SEND ----------
+        if (
+            event.type() == QEvent.KeyPress
+            and obj is self.text_box
+            and self.enter_send_btn.isChecked()
+            and event.key() in (Qt.Key_Return, Qt.Key_Enter)
+            and event.modifiers() == Qt.NoModifier
+        ):
+            event.accept()
+            self.on_send()
+            return True
+
+        # ---------- PTT HANDLING ----------
+        if self.mic_enabled and self.ptt_enabled:
+            if event.type() == QEvent.KeyPress:
+                if event.key() == PTT_KEY and not self.ptt_active:
+                    self.ptt_active = True
+                    self.stt.start()
+
+            elif event.type() == QEvent.KeyRelease:
+                if event.key() == PTT_KEY and self.ptt_active:
+                    self.ptt_active = False
+                    self.stt.stop()
+                    self.finish_stt()
+
+        return super().eventFilter(obj, event)
+
+
+
+        return False
+
+
+
 
   
     # ---------- UI ----------
@@ -292,12 +430,12 @@ class App(QWidget):
         top = QHBoxLayout()
         self.ollama_led = StatusLED()
         self.tts_led = StatusLED()
-
-        top.addWidget(self.ollama_led)
-        top.addWidget(QLabel("KoboldCPP"))
-        top.addSpacing(10)
+        
         top.addWidget(self.tts_led)
         top.addWidget(QLabel("Echo-TTS"))
+        top.addSpacing(10)
+        top.addWidget(self.ollama_led)
+        top.addWidget(QLabel("KoboldCPP"))
         top.addStretch(1)
 
         self.agc_mode_box = QComboBox()
@@ -309,7 +447,7 @@ class App(QWidget):
             lambda t: setattr(self.player, "agc_mode", t.lower())
         )
 
-        self.agc_btn = QPushButton("AGC")
+        self.agc_btn = QPushButton("Gain")
         self.agc_btn.setCheckable(True)
         self.agc_btn.toggled.connect(lambda s: setattr(self.player, "auto_gain", s))
         top.addWidget(self.agc_btn)
@@ -388,6 +526,17 @@ class App(QWidget):
         self.reset_chat_btn = QPushButton("Reset Chat")
         self.reset_chat_btn.clicked.connect(self.reset_chat)
         bottom.addWidget(self.reset_chat_btn)
+
+        self.mic_btn = QPushButton("🎤 Mic")
+        self.mic_btn.setCheckable(True)
+        bottom.addWidget(self.mic_btn)
+
+        self.ptt_btn = QPushButton("PTT")
+        self.ptt_btn.setCheckable(True)
+        bottom.addWidget(self.ptt_btn)
+        
+        self.mic_btn.toggled.connect(self.toggle_mic)
+        self.ptt_btn.toggled.connect(self.toggle_ptt)
 
         bottom.addStretch(1)
 
@@ -604,8 +753,7 @@ class App(QWidget):
             self.tts_ttfb = 0.0
 
 
-    # ---------- ACTION ----------
-
+# ---------- ACTION ----------
     def on_send(self):
         if not self.pipeline_sem.acquire(blocking=False):
             return
@@ -617,6 +765,33 @@ class App(QWidget):
 
         QTimer.singleShot(0, self.text_box.clear)
         threading.Thread(target=self.run_pipeline, args=(text,), daemon=True).start()
+
+
+    def finish_stt(self):
+        text = self.stt.transcribe().strip()
+        if not text:
+            return
+
+        self.text_box.setLineWrapMode(QTextEdit.NoWrap)
+
+        # Split text into characters for gradual typing
+        self._stt_text = text
+        self._stt_index = 0
+
+        def type_step():
+            if self._stt_index < len(self._stt_text):
+                self.text_box.moveCursor(QTextCursor.End)
+                self.text_box.insertPlainText(self._stt_text[self._stt_index])
+                self._stt_index += 1
+                QTimer.singleShot(30, type_step)  # 30 ms per character
+            else:
+                self.text_box.moveCursor(QTextCursor.End)
+                QTimer.singleShot(800, self.on_send)  # send after typing done
+
+        type_step()
+
+
+
 
     def run_pipeline(self, text):
         self.busy = True
@@ -634,7 +809,7 @@ class App(QWidget):
             if len(self.chat_history) > MAX_HISTORY_MESSAGES:
                 self.chat_history = self.chat_history[-MAX_HISTORY_MESSAGES:]
 
-        # ===== KOBOLDCPP GENERATION =====
+            # ===== KOBOLDCPP GENERATION =====
             prompt = self.build_prompt()
 
             start = time.perf_counter()
@@ -654,9 +829,8 @@ class App(QWidget):
             reply = r.json()["results"][0]["text"].strip()
             tokens_est = max(1, len(reply) // 4)  # ~4 chars per token
             self.ollama_tps = tokens_est / max(elapsed, 1e-6)
-        
-        # ===== END KOBOLDCPP =====
 
+            # ===== END KOBOLDCPP =====
             self.chat_history.append({"role": "assistant", "content": reply})
 
             tts_start = time.perf_counter()
@@ -690,9 +864,12 @@ class App(QWidget):
                             self.tts_ttfb = time.perf_counter() - tts_start
                             first = False
                         self.player.play(chunk, self.user_gain)
+
         finally:
             self.busy = False
             self.pipeline_sem.release()
+
+
     def save_settings(self):
         self.settings.setValue("volume", self.vol_slider.value())
         self.settings.setValue("agc", self.agc_btn.isChecked())
